@@ -69,7 +69,8 @@ function FlowStep({
   initial?: TxRecord
   onNext: (d: FlowValues) => void
 }) {
-  const [amount, setAmount] = useState<string>(() => (initial ? String(initial.amount) : '0'))
+  const [amount, setAmount] = useState<string>(() => (initial ? String(initial.amount) : ''))
+  const [amountConfirmed, setAmountConfirmed] = useState<boolean>(!!initial)
   const [kind, setKind] = useState<UiKind | null>(() => (initial ? recordToUiKind(initial) : null))
   const [paidBy, setPaidBy] = useState<Participant | null>(() => initial?.paid_by ?? null)
   const [beneficiary, setBeneficiary] = useState<Participant | null>(() => initial?.beneficiary ?? null)
@@ -111,69 +112,113 @@ function FlowStep({
     })
   }
 
-  function appendDigit(d: string) {
-    setAmount(prev => {
-      if (prev === '0') return d === '0' ? '0' : d
-      if (prev.length >= 12) return prev
-      return prev + d
-    })
-  }
-  function backspace() {
-    setAmount(prev => (prev.length <= 1 ? '0' : prev.slice(0, -1)))
-  }
-  function clearAmount() {
-    setAmount('0')
-  }
-
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-5">
-      <section
-        className="flex min-h-[28vh] flex-col items-center justify-center rounded-3xl p-6"
-        style={{
-          background:
-            'linear-gradient(135deg, var(--elevated) 0%, color-mix(in srgb, var(--accent-primary) 6%, var(--elevated)) 100%)',
-          border: '1px solid var(--border-color)',
+    <div className="mx-auto flex w-full max-w-md flex-col gap-8">
+      <AmountField
+        amount={amount}
+        onChange={setAmount}
+        onCommit={() => {
+          if (numericAmount > 0) setAmountConfirmed(true)
         }}
-      >
-        <div
-          className="text-center text-6xl font-semibold tracking-tight md:text-7xl"
-          style={{ color: numericAmount > 0 ? 'var(--text-primary)' : 'var(--neutral-spend)' }}
-        >
-          {numericAmount.toLocaleString('fr-FR')}
+        confirmed={amountConfirmed}
+      />
+
+      {amountConfirmed && numericAmount > 0 ? (
+        <div className="grid grid-cols-2 gap-2 fade-in">
+          <BigChoice active={kind === 'transfer'} onClick={() => selectKind('transfer')} label="Transfert" />
+          <BigChoice active={kind === 'expense'} onClick={() => selectKind('expense')} label="Dépense" />
         </div>
-        <div className="mt-1 text-xs uppercase tracking-wider opacity-60">LYD</div>
-      </section>
-
-      <Keypad onDigit={appendDigit} onBackspace={backspace} onClear={clearAmount} />
-
-      <div className="grid grid-cols-2 gap-2">
-        <BigChoice active={kind === 'transfer'} onClick={() => selectKind('transfer')} label="Transfert" />
-        <BigChoice active={kind === 'expense'} onClick={() => selectKind('expense')} label="Dépense" />
-      </div>
-
-      {kind === 'expense' ? (
-        <ParticipantTiles label="Qui paye ?" value={paidBy} onChange={setPaidBy} exclude={['Client']} />
-      ) : kind === 'transfer' ? (
-        <>
-          <ParticipantTiles label="De qui" value={paidBy} onChange={setPaidBy} />
-          <ParticipantTiles label="Vers qui" value={beneficiary} onChange={setBeneficiary} />
-        </>
       ) : null}
 
-      <button
-        onClick={next}
-        disabled={!isValid}
-        className="sticky bottom-2 mt-3 flex items-center justify-center gap-2 rounded-xl py-3.5 text-base font-semibold transition disabled:opacity-30"
-        style={{
-          background: 'var(--accent-primary)',
-          color: '#111418',
-          boxShadow: isValid ? '0 6px 20px rgba(245,200,66,0.25)' : 'none',
-        }}
-      >
-        Suivant
-        <ArrowRight size={18} />
-      </button>
+      {amountConfirmed && kind === 'expense' ? (
+        <div className="fade-in">
+          <ParticipantTiles label="Qui paye ?" value={paidBy} onChange={setPaidBy} exclude={['Client']} />
+        </div>
+      ) : null}
+
+      {amountConfirmed && kind === 'transfer' ? (
+        <div className="flex flex-col gap-4 fade-in">
+          <ParticipantTiles label="De qui" value={paidBy} onChange={setPaidBy} />
+          <ParticipantTiles label="Vers qui" value={beneficiary} onChange={setBeneficiary} />
+        </div>
+      ) : null}
+
+      {isValid ? (
+        <button
+          onClick={next}
+          className="sticky bottom-2 flex items-center justify-center gap-2 rounded-xl py-3.5 text-base font-semibold transition fade-in"
+          style={{
+            background: 'var(--accent-primary)',
+            color: '#111418',
+            boxShadow: '0 6px 20px rgba(245,200,66,0.25)',
+          }}
+        >
+          Suivant
+          <ArrowRight size={18} />
+        </button>
+      ) : null}
     </div>
+  )
+}
+
+function AmountField({
+  amount,
+  onChange,
+  onCommit,
+  confirmed,
+}: {
+  amount: string
+  onChange: (next: string) => void
+  onCommit: () => void
+  confirmed: boolean
+}) {
+  const numericAmount = Number(amount) || 0
+
+  return (
+    <label
+      className="flex min-h-[40vh] cursor-text flex-col items-center justify-center rounded-3xl px-6 py-10 text-center"
+      style={{
+        background:
+          'linear-gradient(135deg, var(--elevated) 0%, color-mix(in srgb, var(--accent-primary) 6%, var(--elevated)) 100%)',
+        border: '1px solid var(--border-color)',
+      }}
+    >
+      <input
+        type="text"
+        inputMode="numeric"
+        autoFocus={!confirmed}
+        enterKeyHint="done"
+        value={amount}
+        onChange={e => {
+          const cleaned = e.target.value.replace(/[^0-9]/g, '').slice(0, 12)
+          onChange(cleaned)
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            onCommit()
+            ;(e.target as HTMLInputElement).blur()
+          }
+        }}
+        onBlur={() => {
+          if (numericAmount > 0) onCommit()
+        }}
+        className="w-full bg-transparent text-center text-7xl font-semibold tracking-tight outline-none md:text-8xl"
+        style={{
+          color: numericAmount > 0 ? 'var(--text-primary)' : 'var(--neutral-spend)',
+          caretColor: 'var(--accent-primary)',
+        }}
+        placeholder="0"
+        aria-label="Montant"
+      />
+      <div className="mt-3 text-sm uppercase tracking-[0.2em] opacity-60">LYD</div>
+      {!confirmed && numericAmount === 0 ? (
+        <div className="mt-6 text-xs opacity-50">Tape un montant puis valide ↵</div>
+      ) : null}
+      {!confirmed && numericAmount > 0 ? (
+        <div className="mt-6 text-xs opacity-50">Touche entrée pour valider</div>
+      ) : null}
+    </label>
   )
 }
 
@@ -227,36 +272,6 @@ function ParticipantTiles({
           )
         })}
       </div>
-    </div>
-  )
-}
-
-function Keypad({
-  onDigit,
-  onBackspace,
-  onClear,
-}: {
-  onDigit: (d: string) => void
-  onBackspace: () => void
-  onClear: () => void
-}) {
-  const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫']
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {KEYS.map(k => (
-        <button
-          key={k}
-          onClick={() => (k === 'C' ? onClear() : k === '⌫' ? onBackspace() : onDigit(k))}
-          className="rounded-xl border py-3 text-lg font-medium transition active:scale-95"
-          style={{
-            borderColor: 'var(--border-color)',
-            color: k === 'C' ? 'var(--negative)' : 'var(--text-primary)',
-            background: 'var(--elevated)',
-          }}
-        >
-          {k}
-        </button>
-      ))}
     </div>
   )
 }
