@@ -1,14 +1,22 @@
 import { NavLink, Route, Routes, Navigate } from 'react-router-dom'
-import { LayoutDashboard, ListTree, Users, Sun, Moon } from 'lucide-react'
+import { LayoutDashboard, Plus, ListTree, Sun, Moon } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import Dashboard from './routes/Dashboard'
+import Overview from './routes/Overview'
+import AddTransaction from './routes/AddTransaction'
 import Transactions from './routes/Transactions'
-import Participants from './routes/Participants'
 
-const NAV = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+interface NavItem {
+  to: string
+  label: string
+  icon: LucideIcon
+  end: boolean
+  center?: boolean
+}
+const NAV: NavItem[] = [
+  { to: '/', label: 'Aperçu', icon: LayoutDashboard, end: true },
+  { to: '/add', label: 'Ajouter', icon: Plus, end: false, center: true },
   { to: '/transactions', label: 'Transactions', icon: ListTree, end: false },
-  { to: '/participants', label: 'Participants', icon: Users, end: false },
 ]
 
 function useTheme() {
@@ -29,13 +37,14 @@ export default function App() {
   return (
     <div className="flex min-h-screen flex-col">
       <header
-        className="sticky top-0 z-20 flex items-center justify-between border-b px-4 py-3 md:px-6"
-        style={{ background: 'var(--nav-bg)', borderColor: 'var(--border-color)', backdropFilter: 'blur(12px)' }}
+        className="sticky top-0 z-20 flex items-center justify-between border-b px-4 py-3 md:px-8"
+        style={{ background: 'var(--nav-bg)', borderColor: 'var(--border-color)', backdropFilter: 'blur(14px)' }}
       >
         <div className="flex items-center gap-3">
-          <span className="text-lg font-semibold tracking-tight">edub · rentals</span>
+          <span className="text-base font-semibold tracking-tight">edub · rentals</span>
           <span className="hidden text-xs opacity-50 md:inline">Libya Villa Business</span>
         </div>
+
         <nav className="is-desktop hidden items-center gap-1 md:flex">
           {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
@@ -53,6 +62,7 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
+
         <button
           onClick={toggle}
           aria-label="Toggle theme"
@@ -72,37 +82,64 @@ export default function App() {
         }}
       >
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Overview />} />
+          <Route path="/add" element={<AddTransaction />} />
           <Route path="/transactions" element={<Transactions />} />
-          <Route path="/participants" element={<Participants />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 
       <nav
-        className="is-mobile fixed bottom-0 left-0 right-0 z-20 flex items-center justify-around border-t py-2"
+        className="is-mobile fixed bottom-0 left-0 right-0 z-20 flex items-center justify-around border-t"
         style={{
           background: 'var(--nav-bg)',
           borderColor: 'var(--border-color)',
           paddingBottom: 'calc(8px + var(--safe-bottom))',
-          backdropFilter: 'blur(12px)',
+          paddingTop: '8px',
+          backdropFilter: 'blur(14px)',
         }}
       >
-        {NAV.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 rounded-md px-3 py-1.5 text-xs ${
-                isActive ? 'opacity-100' : 'opacity-60'
-              }`
-            }
-          >
-            <Icon size={20} />
-            <span>{label}</span>
-          </NavLink>
-        ))}
+        {NAV.map(({ to, label, icon: Icon, end, center }) =>
+          center ? (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className="flex flex-1 items-center justify-center"
+              aria-label={label}
+            >
+              {({ isActive }) => (
+                <div
+                  className="-mt-7 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition"
+                  style={{
+                    background: 'var(--accent-primary)',
+                    color: '#111418',
+                    transform: isActive ? 'scale(1.02)' : 'scale(1)',
+                    boxShadow: isActive
+                      ? '0 8px 24px rgba(245,200,66,0.4)'
+                      : '0 4px 12px rgba(0,0,0,0.25)',
+                  }}
+                >
+                  <Icon size={26} />
+                </div>
+              )}
+            </NavLink>
+          ) : (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                `flex flex-1 flex-col items-center gap-0.5 px-3 py-1.5 text-[11px] ${
+                  isActive ? 'opacity-100' : 'opacity-50'
+                }`
+              }
+            >
+              <Icon size={20} />
+              <span>{label}</span>
+            </NavLink>
+          ),
+        )}
       </nav>
     </div>
   )
