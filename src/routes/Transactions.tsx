@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useRecords } from '../stores/records'
 import { formatLYD, formatDate } from '../lib/format'
 import { ALL_NATURES } from '../lib/types'
 import type { Record as TxRecord, Nature } from '../lib/types'
-import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Trash2 } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, ChevronRight } from 'lucide-react'
 
 type NatureFilter = 'all' | Nature
 
 export default function Transactions() {
-  const { records, loading, error, refresh, remove } = useRecords()
+  const navigate = useNavigate()
+  const { records, loading, error, refresh } = useRecords()
   const [filter, setFilter] = useState<NatureFilter>('all')
 
   useEffect(() => {
@@ -85,9 +87,7 @@ export default function Transactions() {
                     r={r}
                     first={i === 0}
                     last={i === g.items.length - 1}
-                    onDelete={() => {
-                      if (confirm(`Supprimer "${r.transaction}" ?`)) remove(r.id)
-                    }}
+                    onClick={() => navigate(`/edit/${r.id}`)}
                   />
                 ))}
               </div>
@@ -99,7 +99,7 @@ export default function Transactions() {
   )
 }
 
-function Row({ r, last, onDelete }: { r: TxRecord; first: boolean; last: boolean; onDelete: () => void }) {
+function Row({ r, last, onClick }: { r: TxRecord; first: boolean; last: boolean; onClick: () => void }) {
   const icon =
     r.nature === 'Revenu' ? (
       <ArrowDownLeft size={18} style={{ color: 'var(--positive)' }} />
@@ -113,9 +113,10 @@ function Row({ r, last, onDelete }: { r: TxRecord; first: boolean; last: boolean
     r.nature === 'Revenu' ? 'var(--positive)' : r.nature === 'Expense' ? 'var(--negative)' : 'var(--text-primary)'
 
   return (
-    <div
-      className="group flex items-center gap-3 px-3 py-3 md:px-4"
-      style={{ borderTop: last ? 'none' : undefined, borderBottom: last ? 'none' : '1px solid var(--border-color)' }}
+    <button
+      onClick={onClick}
+      className="group flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-white/5 active:bg-white/10 md:px-4"
+      style={{ borderBottom: last ? 'none' : '1px solid var(--border-color)' }}
     >
       <div
         className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full"
@@ -128,7 +129,7 @@ function Row({ r, last, onDelete }: { r: TxRecord; first: boolean; last: boolean
         <div className="flex items-center gap-2 text-[11px] opacity-60">
           <span>{formatDate(r.date)}</span>
           <span>·</span>
-          <span>
+          <span className="truncate">
             {r.paid_by} → {r.beneficiary}
           </span>
         </div>
@@ -141,14 +142,7 @@ function Row({ r, last, onDelete }: { r: TxRecord; first: boolean; last: boolean
           <div className="text-[10px] opacity-60">{r.tags[0]}</div>
         ) : null}
       </div>
-      <button
-        onClick={onDelete}
-        aria-label="Delete"
-        className="rounded-md p-1 opacity-0 transition group-hover:opacity-60 hover:!opacity-100 md:opacity-0"
-        style={{ color: 'var(--negative)' }}
-      >
-        <Trash2 size={14} />
-      </button>
-    </div>
+      <ChevronRight size={14} className="opacity-30 transition group-hover:opacity-60" />
+    </button>
   )
 }

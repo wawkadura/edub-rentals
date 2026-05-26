@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import Overview from './routes/Overview'
 import AddTransaction from './routes/AddTransaction'
+import EditTransaction from './routes/EditTransaction'
 import Transactions from './routes/Transactions'
 
 interface NavItem {
@@ -84,6 +85,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Overview />} />
           <Route path="/add" element={<AddTransaction />} />
+          <Route path="/edit/:id" element={<EditTransaction />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

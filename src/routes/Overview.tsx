@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { useRecords } from '../stores/records'
 import { formatLYD } from '../lib/format'
-import { TrendingUp, TrendingDown, Wallet, Percent } from 'lucide-react'
+import { Wallet, Percent } from 'lucide-react'
 
 export default function Overview() {
   const { summary, loading, error, refresh } = useRecords()
@@ -52,30 +52,18 @@ export default function Overview() {
           primaryColor={sofian.net >= 0 ? 'var(--positive)' : 'var(--negative)'}
           rows={[
             { label: 'Investi', value: formatLYD(sofian.invested) },
-            { label: 'Avance dép.', value: formatLYD(sofian.expenses_advanced) },
+            { label: 'Reçu', value: formatLYD(sofian.distributed) },
           ]}
         />
       </section>
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3">
         <Kpi
           icon={Percent}
           label="Rentabilité"
           value={roi !== null ? `${roi.toFixed(1)} %` : '—'}
           tone={roi !== null && roi >= 0 ? 'positive' : roi !== null ? 'negative' : undefined}
           hint="(revenus − dépenses) / investi"
-        />
-        <Kpi
-          icon={TrendingUp}
-          label="Revenus loc."
-          value={formatLYD(summary.total_revenus)}
-          tone="positive"
-        />
-        <Kpi
-          icon={TrendingDown}
-          label="Dépenses"
-          value={formatLYD(summary.total_expenses)}
-          tone="negative"
         />
         <Kpi
           icon={Wallet}
