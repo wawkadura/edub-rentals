@@ -112,18 +112,50 @@ export function computeSummary(records: TxRecord[]): SummaryResponse {
     }
   }
 
+  const treasury = cash_in - cash_out
+
+  // Walid 2026-05-26: Walid + Sofian are 50/50 partners. Their soldes
+  // are real equity claims against the treasury, derived from the data:
+  //
+  //   solde(partner) = (treasury − Σ unreimbursed advances) / 2
+  //                  + partner's own unreimbursed advances
+  //
+  //   where unreimbursed = expenses_advanced − expenses_reimbursed
+  //
+  // Properties:
+  //   • Walid.solde + Sofian.solde = treasury (always, by construction)
+  //   • Treasury splits 50/50 by default (joint ownership of the business)
+  //   • If one partner advances cash personally for a business expense,
+  //     the unreimbursed portion is owed to them on top — that's a
+  //     receivable, not equity, so it shifts the split until reimbursed.
+  //
+  // Client and Business get solde = 0 (not partners).
+  const PARTNERS: Participant[] = ['Walid', 'Sofian']
+  const unreimbursedByPartner: { [K in Participant]?: number } = {}
+  let unreimbursedTotal = 0
+  for (const partner of PARTNERS) {
+    const p = perPart[partner]
+    const owed = Math.max(0, p.expenses_advanced - p.expenses_reimbursed)
+    unreimbursedByPartner[partner] = owed
+    unreimbursedTotal += owed
+  }
+  const equityShare = (treasury - unreimbursedTotal) / 2
+
   const participants = ALL_PARTICIPANTS.map(name => {
     const p = perPart[name]
+    const solde = PARTNERS.includes(name)
+      ? equityShare + (unreimbursedByPartner[name] ?? 0)
+      : 0
     return {
       name,
       ...p,
-      net: p.total_received - p.total_paid,
+      net: solde,
     } as ParticipantSummary
   })
 
   return {
     currency: 'LYD',
-    treasury: cash_in - cash_out,
+    treasury,
     total_invested,
     total_revenus,
     total_expenses,

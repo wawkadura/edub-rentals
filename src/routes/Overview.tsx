@@ -3,6 +3,19 @@ import type { LucideIcon } from 'lucide-react'
 import { useRecords } from '../stores/records'
 import { formatLYD } from '../lib/format'
 import { Wallet, Percent } from 'lucide-react'
+import type { ParticipantSummary } from '../lib/types'
+
+function buildParticipantRows(p: ParticipantSummary) {
+  const rows = [
+    { label: 'Investi', value: formatLYD(p.invested) },
+    { label: 'Reçu', value: formatLYD(p.distributed) },
+  ]
+  const unreimbursed = p.expenses_advanced - p.expenses_reimbursed
+  if (unreimbursed > 0) {
+    rows.push({ label: 'Avance dûe', value: formatLYD(unreimbursed) })
+  }
+  return rows
+}
 
 export default function Overview() {
   const { summary, loading, error, refresh } = useRecords()
@@ -40,20 +53,14 @@ export default function Overview() {
           label="Walid"
           primary={formatLYD(walid.net)}
           primaryColor={walid.net >= 0 ? 'var(--positive)' : 'var(--negative)'}
-          rows={[
-            { label: 'Investi', value: formatLYD(walid.invested) },
-            { label: 'Reçu', value: formatLYD(walid.distributed) },
-          ]}
+          rows={buildParticipantRows(walid)}
         />
         <BigCard
           icon={Wallet}
           label="Sofian"
           primary={formatLYD(sofian.net)}
           primaryColor={sofian.net >= 0 ? 'var(--positive)' : 'var(--negative)'}
-          rows={[
-            { label: 'Investi', value: formatLYD(sofian.invested) },
-            { label: 'Reçu', value: formatLYD(sofian.distributed) },
-          ]}
+          rows={buildParticipantRows(sofian)}
         />
       </section>
 
