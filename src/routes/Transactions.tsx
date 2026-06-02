@@ -4,7 +4,7 @@ import { useRecords } from '../stores/records'
 import { formatLYD, formatDate } from '../lib/format'
 import { ALL_NATURES } from '../lib/types'
 import type { Record as TxRecord, Nature } from '../lib/types'
-import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, ChevronRight } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, ChevronRight, MessageSquareText } from 'lucide-react'
 
 type NatureFilter = 'all' | Nature
 
@@ -174,7 +174,12 @@ function Row({ r, last, onClick }: { r: TxRecord; first: boolean; last: boolean;
         {icon}
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="truncate text-sm font-medium">{r.transaction}</div>
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-sm font-medium">{r.transaction}</span>
+          {r.notes && r.notes.trim() ? (
+            <MessageSquareText size={11} className="flex-shrink-0 opacity-50" />
+          ) : null}
+        </div>
         <div className="flex items-center gap-2 text-[11px] opacity-60">
           <span>{formatDate(r.date)}</span>
           <span>·</span>

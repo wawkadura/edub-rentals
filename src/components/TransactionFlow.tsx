@@ -13,6 +13,7 @@ export interface FlowValues {
   beneficiary: Participant
   label: string
   date: string
+  notes: string
 }
 
 export interface TransactionFlowProps {
@@ -26,6 +27,7 @@ export interface TransactionFlowProps {
     beneficiary: Participant
     nature: Nature
     tags: Tag[]
+    notes: string
   }) => Promise<void>
   onDelete?: () => Promise<void>
 }
@@ -44,6 +46,7 @@ export default function TransactionFlow({ initial, submitLabel, onSubmit, onDele
           beneficiary: initial.beneficiary,
           label: initial.transaction,
           date: initial.date,
+          notes: initial.notes ?? '',
         }
       : null,
   )
@@ -109,6 +112,7 @@ function FlowStep({
       beneficiary: beneficiary!,
       label: defaultLabel,
       date: initial?.date ?? new Date().toISOString().slice(0, 10),
+      notes: initial?.notes ?? '',
     })
   }
 
@@ -292,6 +296,7 @@ function RecapStep({
 }) {
   const [label, setLabel] = useState<string>(draft.label)
   const [date, setDate] = useState<string>(draft.date)
+  const [notes, setNotes] = useState<string>(draft.notes)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -322,6 +327,7 @@ function RecapStep({
         beneficiary: draft.beneficiary,
         nature,
         tags,
+        notes: notes.trim(),
       })
     } catch (e) {
       setError((e as Error).message)
@@ -407,6 +413,18 @@ function RecapStep({
           style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
           value={date}
           onChange={e => setDate(e.target.value)}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="text-[11px] uppercase tracking-wider opacity-60">Note (optionnel)</div>
+        <textarea
+          rows={3}
+          placeholder="Détails, contexte, calculs…"
+          className="w-full resize-none rounded-xl border bg-transparent px-3 py-3 text-sm"
+          style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
         />
       </div>
 

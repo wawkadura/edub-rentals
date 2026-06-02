@@ -1,11 +1,12 @@
 import { NavLink, Route, Routes, Navigate } from 'react-router-dom'
-import { LayoutDashboard, Plus, ListTree, Sun, Moon } from 'lucide-react'
+import { LayoutDashboard, Plus, ListTree, Sun, Moon, RefreshCw } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import Overview from './routes/Overview'
 import AddTransaction from './routes/AddTransaction'
 import EditTransaction from './routes/EditTransaction'
 import Transactions from './routes/Transactions'
+import { useRecords } from './stores/records'
 
 interface NavItem {
   to: string
@@ -34,6 +35,8 @@ function useTheme() {
 
 export default function App() {
   const { theme, toggle } = useTheme()
+  const refresh = useRecords(s => s.refresh)
+  const loading = useRecords(s => s.loading)
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -64,13 +67,23 @@ export default function App() {
           ))}
         </nav>
 
-        <button
-          onClick={toggle}
-          aria-label="Toggle theme"
-          className="rounded-md p-2 hover:bg-white/10"
-        >
-          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => refresh()}
+            disabled={loading}
+            aria-label="Rafraîchir"
+            className="rounded-md p-2 hover:bg-white/10 disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : undefined} />
+          </button>
+          <button
+            onClick={toggle}
+            aria-label="Toggle theme"
+            className="rounded-md p-2 hover:bg-white/10"
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+        </div>
       </header>
 
       <main
