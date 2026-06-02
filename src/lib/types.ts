@@ -49,6 +49,7 @@ export interface ParticipantSummary {
   distributed: number
   expenses_advanced: number
   expenses_reimbursed: number
+  advance_due: number
 }
 
 export interface SummaryResponse {
@@ -58,5 +59,7 @@ export interface SummaryResponse {
   total_revenus: number
   total_expenses: number
   total_distributions: number
+  total_cash_in: number
+  total_cash_out: number
   participants: ParticipantSummary[]
 }

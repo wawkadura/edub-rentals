@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { useRecords } from '../stores/records'
 import { formatLYD } from '../lib/format'
-import { Wallet, Percent } from 'lucide-react'
+import { Wallet, Percent, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import type { ParticipantSummary } from '../lib/types'
 
 function buildParticipantRows(p: ParticipantSummary) {
@@ -10,9 +10,8 @@ function buildParticipantRows(p: ParticipantSummary) {
     { label: 'Investi', value: formatLYD(p.invested) },
     { label: 'Reçu', value: formatLYD(p.distributed) },
   ]
-  const unreimbursed = p.expenses_advanced - p.expenses_reimbursed
-  if (unreimbursed > 0) {
-    rows.push({ label: 'Avance dûe', value: formatLYD(unreimbursed) })
+  if (p.advance_due > 0) {
+    rows.push({ label: 'Avance dûe', value: formatLYD(Math.round(p.advance_due)) })
   }
   return rows
 }
@@ -46,6 +45,23 @@ export default function Overview() {
         </h1>
         <span className="text-xs opacity-50">Solde net du business</span>
       </header>
+
+      <section className="grid grid-cols-2 gap-3">
+        <Kpi
+          icon={ArrowDownLeft}
+          label="Entrées totales"
+          value={formatLYD(summary.total_cash_in)}
+          tone="positive"
+          hint="Loyers + apports"
+        />
+        <Kpi
+          icon={ArrowUpRight}
+          label="Sorties totales"
+          value={formatLYD(summary.total_cash_out)}
+          tone="negative"
+          hint="Versements + dépenses"
+        />
+      </section>
 
       <section className="grid grid-cols-2 gap-3">
         <BigCard

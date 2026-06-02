@@ -17,11 +17,15 @@ export default function Transactions() {
     refresh()
   }, [refresh])
 
-  const grouped = useMemo(() => {
+  const { grouped, totals } = useMemo(() => {
     const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1))
     const filtered = filter === 'all' ? sorted : sorted.filter(r => r.nature === filter)
     const groups: { key: string; label: string; items: TxRecord[] }[] = []
+    let totalRevenus = 0
+    let totalExpenses = 0
     for (const r of filtered) {
+      if (r.nature === 'Revenu') totalRevenus += r.amount
+      if (r.nature === 'Expense') totalExpenses += r.amount
       const month = r.date.slice(0, 7)
       const last = groups[groups.length - 1]
       if (last && last.key === month) {
@@ -34,7 +38,10 @@ export default function Transactions() {
         groups.push({ key: month, label: label.charAt(0).toUpperCase() + label.slice(1), items: [r] })
       }
     }
-    return groups
+    return {
+      grouped: groups,
+      totals: { revenus: totalRevenus, expenses: totalExpenses },
+    }
   }, [records, filter])
 
   return (
@@ -43,6 +50,21 @@ export default function Transactions() {
         <h1 className="text-xl font-semibold md:text-2xl">Transactions</h1>
         <span className="text-xs opacity-50">{records.length} entrées</span>
       </header>
+
+      <div className="grid grid-cols-2 gap-3">
+        <TotalCard
+          icon={<ArrowDownLeft size={14} style={{ color: 'var(--positive)' }} />}
+          label="Total revenus"
+          value={formatLYD(totals.revenus)}
+          color="var(--positive)"
+        />
+        <TotalCard
+          icon={<ArrowUpRight size={14} style={{ color: 'var(--negative)' }} />}
+          label="Total dépenses"
+          value={formatLYD(totals.expenses)}
+          color="var(--negative)"
+        />
+      </div>
 
       <div className="flex gap-2 overflow-x-auto">
         {(['all', ...ALL_NATURES] as NatureFilter[]).map(n => {
@@ -95,6 +117,33 @@ export default function Transactions() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function TotalCard({
+  icon,
+  label,
+  value,
+  color,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  color: string
+}) {
+  return (
+    <div
+      className="flex flex-col gap-1 rounded-xl border p-3"
+      style={{ borderColor: 'var(--border-color)', background: 'var(--elevated)' }}
+    >
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider opacity-60">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="text-base font-semibold md:text-lg" style={{ color }}>
+        {value}
+      </div>
     </div>
   )
 }

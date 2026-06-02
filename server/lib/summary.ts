@@ -10,6 +10,7 @@ export interface ParticipantSummary {
   distributed: number
   expenses_advanced: number
   expenses_reimbursed: number
+  advance_due: number
 }
 
 export interface SummaryResponse {
@@ -19,6 +20,8 @@ export interface SummaryResponse {
   total_revenus: number
   total_expenses: number
   total_distributions: number
+  total_cash_in: number
+  total_cash_out: number
   participants: ParticipantSummary[]
 }
 
@@ -114,41 +117,59 @@ export function computeSummary(records: TxRecord[]): SummaryResponse {
 
   const treasury = cash_in - cash_out
 
-  // Walid 2026-05-26: Walid + Sofian are 50/50 partners. Their soldes
-  // are real equity claims against the treasury, derived from the data:
+  // Walid 2026-06-02 (v5): when a partner advances cash for a joint
+  // expense, only HALF of the unreimbursed advance is treated as a
+  // receivable. The other half is that partner's own share of the
+  // expense — they would have had to pay it anyway as a 50% owner.
   //
-  //   solde(partner) = (treasury − Σ unreimbursed advances) / 2
-  //                  + partner's own unreimbursed advances
-  //
-  //   where unreimbursed = expenses_advanced − expenses_reimbursed
+  //   advance_due(partner)  = unreimbursed(partner) / 2
+  //   equityShare           = (treasury − Σ advance_due) / 2
+  //   solde(partner)        = equityShare + advance_due(partner)
   //
   // Properties:
-  //   • Walid.solde + Sofian.solde = treasury (always, by construction)
-  //   • Treasury splits 50/50 by default (joint ownership of the business)
-  //   • If one partner advances cash personally for a business expense,
-  //     the unreimbursed portion is owed to them on top — that's a
-  //     receivable, not equity, so it shifts the split until reimbursed.
+  //   • Walid.solde + Sofian.solde = treasury (by construction)
+  //   • When Sofian advances 450, only 225 is "owed to him" by the
+  //     joint partnership (the other 225 is his own share).
+  //   • When the advance is fully reimbursed (treasury drops by the
+  //     full advance), the soldes equalize.
   //
   // Client and Business get solde = 0 (not partners).
   const PARTNERS: Participant[] = ['Walid', 'Sofian']
-  const unreimbursedByPartner: { [K in Participant]?: number } = {}
-  let unreimbursedTotal = 0
+  const advanceDueByPartner: { [K in Participant]?: number } = {}
+  let advanceDueTotal = 0
   for (const partner of PARTNERS) {
     const p = perPart[partner]
-    const owed = Math.max(0, p.expenses_advanced - p.expenses_reimbursed)
-    unreimbursedByPartner[partner] = owed
-    unreimbursedTotal += owed
+    const unreimbursed = Math.max(0, p.expenses_advanced - p.expenses_reimbursed)
+    const due = unreimbursed / 2
+    advanceDueByPartner[partner] = due
+    advanceDueTotal += due
   }
-  const equityShare = (treasury - unreimbursedTotal) / 2
+  const equityShare = (treasury - advanceDueTotal) / 2
+
+  // Compute partner soldes first, then enforce the invariant
+  // sum(partners) = treasury by giving any rounding remainder to the
+  // first partner (so we don't display values that don't sum cleanly).
+  const partnerSoldes: { [K in Participant]?: number } = {}
+  for (const partner of PARTNERS) {
+    partnerSoldes[partner] = Math.round(
+      equityShare + (advanceDueByPartner[partner] ?? 0),
+    )
+  }
+  const partnerSum = PARTNERS.reduce((acc, p) => acc + (partnerSoldes[p] ?? 0), 0)
+  const remainder = Math.round(treasury) - partnerSum
+  if (remainder !== 0 && PARTNERS.length > 0) {
+    const first = PARTNERS[0]
+    partnerSoldes[first] = (partnerSoldes[first] ?? 0) + remainder
+  }
 
   const participants = ALL_PARTICIPANTS.map(name => {
     const p = perPart[name]
-    const solde = PARTNERS.includes(name)
-      ? equityShare + (unreimbursedByPartner[name] ?? 0)
-      : 0
+    const due = advanceDueByPartner[name] ?? 0
+    const solde = PARTNERS.includes(name) ? (partnerSoldes[name] ?? 0) : 0
     return {
       name,
       ...p,
+      advance_due: due,
       net: solde,
     } as ParticipantSummary
   })
@@ -160,6 +181,8 @@ export function computeSummary(records: TxRecord[]): SummaryResponse {
     total_revenus,
     total_expenses,
     total_distributions,
+    total_cash_in: cash_in,
+    total_cash_out: cash_out,
     participants,
   }
 }
