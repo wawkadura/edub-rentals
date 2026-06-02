@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
+  Area,
+  AreaChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -11,7 +11,7 @@ import {
 } from 'recharts'
 import { useRecords } from '../stores/records'
 import { formatLYD } from '../lib/format'
-import { Wallet, Percent, ArrowDownLeft, ArrowUpRight, X } from 'lucide-react'
+import { Wallet, Percent, X } from 'lucide-react'
 import type { ParticipantSummary, Participant, Record as TxRecord } from '../lib/types'
 
 function buildCumulativeSeries(records: TxRecord[]) {
@@ -49,14 +49,10 @@ function formatCompact(n: number): string {
 }
 
 function buildParticipantRows(p: ParticipantSummary) {
-  const rows = [
+  return [
     { label: 'Investi', value: formatLYD(p.invested) },
     { label: 'Reçu', value: formatLYD(p.distributed) },
   ]
-  if (p.advance_due > 0) {
-    rows.push({ label: 'Avance dûe', value: formatLYD(Math.round(p.advance_due)) })
-  }
-  return rows
 }
 
 export default function Overview() {
@@ -91,23 +87,6 @@ export default function Overview() {
         </h1>
         <span className="text-xs opacity-50">Solde net du business</span>
       </header>
-
-      <section className="grid grid-cols-2 gap-3">
-        <Kpi
-          icon={ArrowDownLeft}
-          label="Entrées totales"
-          value={formatLYD(summary.total_cash_in)}
-          tone="positive"
-          hint="Loyers + apports"
-        />
-        <Kpi
-          icon={ArrowUpRight}
-          label="Sorties totales"
-          value={formatLYD(summary.total_cash_out)}
-          tone="negative"
-          hint="Versements + dépenses"
-        />
-      </section>
 
       <section className="grid grid-cols-2 gap-3">
         <BigCard
@@ -169,7 +148,17 @@ export default function Overview() {
           </div>
           <div className="h-48 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={cumulativeSeries} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <AreaChart data={cumulativeSeries} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="revenusFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--positive)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="var(--positive)" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="expensesFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--negative)" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="var(--negative)" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid stroke="var(--border-color)" strokeDasharray="2 4" vertical={false} />
                 <XAxis
                   dataKey="label"
@@ -197,31 +186,35 @@ export default function Overview() {
                   labelStyle={{ color: 'var(--text-primary)', opacity: 0.7, fontSize: 11 }}
                   formatter={value => [formatLYD(Number(value) || 0), '']}
                 />
-                <Line
+                <Area
                   type="monotone"
                   dataKey="revenus"
                   name="Revenus"
                   stroke="var(--positive)"
                   strokeWidth={2}
-                  dot={false}
+                  fill="url(#revenusFill)"
                 />
-                <Line
+                <Area
                   type="monotone"
                   dataKey="expenses"
                   name="Dépenses"
                   stroke="var(--negative)"
                   strokeWidth={2}
-                  dot={false}
+                  fill="url(#expensesFill)"
                 />
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </section>
       ) : null}
 
       {withdrawFor ? (
-        <WithdrawModal
+        <PartnerModal
           partner={withdrawFor}
+          partnerSolde={
+            withdrawFor === 'Walid' ? walid.net : withdrawFor === 'Sofian' ? sofian.net : 0
+          }
+          records={records}
           onClose={() => setWithdrawFor(null)}
           onSubmit={async amount => {
             await add({
@@ -242,12 +235,58 @@ export default function Overview() {
   )
 }
 
-function WithdrawModal({
+interface PartnerShareEntry {
+  date: string
+  label: string
+  rent: number
+  periodExpenses: number
+  ownAdvances: number
+  share: number
+}
+
+function buildPartnerHistory(records: TxRecord[], partner: Participant): PartnerShareEntry[] {
+  const live = records.filter(r => !r.archive && !r.hide)
+  const revenus = live
+    .filter(r => r.nature === 'Revenu' && r.beneficiary === 'Business')
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+  const expenses = live
+    .filter(r => r.nature === 'Expense')
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+
+  const entries: PartnerShareEntry[] = []
+  for (let i = 0; i < revenus.length; i += 1) {
+    const r = revenus[i]
+    const prev = revenus[i - 1]
+    const periodStart = prev ? prev.date : '0000-00-00'
+    const inPeriod = expenses.filter(e => e.date > periodStart && e.date <= r.date)
+    const totalExpense = inPeriod.reduce((s, e) => s + e.amount, 0)
+    const ownAdvances = inPeriod
+      .filter(e => e.paid_by === partner)
+      .reduce((s, e) => s + e.amount, 0)
+    const net = r.amount - totalExpense
+    const share = Math.round(net / 2 + ownAdvances)
+    entries.push({
+      date: r.date,
+      label: r.transaction,
+      rent: r.amount,
+      periodExpenses: totalExpense,
+      ownAdvances,
+      share,
+    })
+  }
+  return entries.reverse()
+}
+
+function PartnerModal({
   partner,
+  partnerSolde,
+  records,
   onClose,
   onSubmit,
 }: {
   partner: Participant
+  partnerSolde: number
+  records: TxRecord[]
   onClose: () => void
   onSubmit: (amount: number) => Promise<void>
 }) {
@@ -255,6 +294,12 @@ function WithdrawModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const numericAmount = Number(amount) || 0
+
+  const history = useMemo(() => buildPartnerHistory(records, partner), [records, partner])
+  const totalEarned = useMemo(
+    () => history.reduce((s, e) => s + e.share, 0),
+    [history],
+  )
 
   async function submit() {
     if (numericAmount <= 0 || submitting) return
@@ -270,86 +315,182 @@ function WithdrawModal({
 
   return (
     <div
-      className="fixed inset-0 z-30 flex items-end justify-center md:items-center"
-      style={{ background: 'rgba(0,0,0,0.55)' }}
-      onClick={onClose}
+      className="fixed inset-0 z-30 flex flex-col"
+      style={{ background: 'var(--bg)' }}
     >
-      <div
-        onClick={e => e.stopPropagation()}
-        className="flex w-full max-w-md flex-col gap-5 rounded-t-3xl border p-6 md:rounded-3xl"
+      <header
+        className="sticky top-0 z-10 flex items-center justify-between border-b px-4 py-3 md:px-8"
         style={{
-          background: 'var(--elevated)',
+          background: 'var(--nav-bg)',
           borderColor: 'var(--border-color)',
-          paddingBottom: 'calc(24px + var(--safe-bottom))',
+          backdropFilter: 'blur(14px)',
+          paddingTop: 'calc(12px + var(--safe-top, 0px))',
         }}
       >
-        <header className="flex items-start justify-between gap-3">
-          <div className="flex flex-col">
-            <span className="text-[11px] uppercase tracking-wider opacity-60">Retrait</span>
-            <h2 className="text-lg font-semibold">{partner}</h2>
-            <span className="text-xs opacity-60">Trésorerie → {partner}</span>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Fermer"
-            className="rounded-full p-2 hover:bg-white/10"
-          >
-            <X size={16} />
-          </button>
-        </header>
-
-        <label className="flex flex-col items-center gap-2 rounded-2xl border px-4 py-6 text-center"
-          style={{ borderColor: 'var(--border-color)' }}
-        >
-          <input
-            type="text"
-            inputMode="numeric"
-            autoFocus
-            enterKeyHint="done"
-            value={amount}
-            onChange={e => setAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 12))}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                ;(e.target as HTMLInputElement).blur()
-                submit()
-              }
-            }}
-            className="w-full bg-transparent text-center text-5xl font-semibold tracking-tight outline-none"
-            style={{
-              color: numericAmount > 0 ? 'var(--text-primary)' : 'var(--neutral-spend)',
-              caretColor: 'var(--accent-primary)',
-            }}
-            placeholder="0"
-            aria-label="Montant"
-          />
-          <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">LYD</div>
-        </label>
-
-        {error ? (
-          <div
-            className="rounded-lg border px-3 py-2 text-xs"
-            style={{ borderColor: 'var(--negative)', color: 'var(--negative)' }}
-          >
-            {error}
-          </div>
-        ) : null}
-
+        <div className="flex flex-col">
+          <span className="text-[10px] uppercase tracking-wider opacity-60">Partenaire</span>
+          <h2 className="text-base font-semibold">{partner}</h2>
+        </div>
         <button
-          onClick={submit}
-          disabled={submitting || numericAmount <= 0}
-          className="flex items-center justify-center gap-2 rounded-xl py-3.5 text-base font-semibold transition disabled:opacity-50"
-          style={{
-            background: 'var(--accent-primary)',
-            color: '#111418',
-            boxShadow: '0 6px 20px rgba(245,200,66,0.25)',
-          }}
+          onClick={onClose}
+          aria-label="Fermer"
+          className="rounded-full p-2 hover:bg-white/10"
         >
-          {submitting ? 'Enregistrement…' : `Retirer ${numericAmount > 0 ? formatLYD(numericAmount) : ''}`}
+          <X size={18} />
         </button>
+      </header>
+
+      <div
+        className="flex-1 overflow-y-auto px-4 md:px-8"
+        style={{
+          paddingTop: 16,
+          paddingBottom: 'calc(80px + var(--safe-bottom))',
+        }}
+      >
+        <div className="mx-auto flex w-full max-w-md flex-col gap-5">
+          <section
+            className="flex flex-col items-center gap-1 rounded-2xl border px-4 py-5 text-center"
+            style={{
+              background:
+                'linear-gradient(135deg, var(--elevated) 0%, color-mix(in srgb, var(--accent-primary) 6%, var(--elevated)) 100%)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            <span className="text-[10px] uppercase tracking-wider opacity-60">Solde actuel</span>
+            <span
+              className="text-4xl font-semibold tracking-tight"
+              style={{ color: partnerSolde >= 0 ? 'var(--positive)' : 'var(--negative)' }}
+            >
+              {formatLYD(partnerSolde)}
+            </span>
+            <span className="text-[10px] opacity-60">
+              Cumul historique des parts : {formatLYD(totalEarned)}
+            </span>
+          </section>
+
+          <section className="flex flex-col gap-3">
+            <div className="text-[11px] uppercase tracking-wider opacity-60">Retrait rapide</div>
+            <label
+              className="flex flex-col items-center gap-2 rounded-2xl border px-4 py-5 text-center"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--elevated)' }}
+            >
+              <input
+                type="text"
+                inputMode="numeric"
+                enterKeyHint="done"
+                value={amount}
+                onChange={e => setAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 12))}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    ;(e.target as HTMLInputElement).blur()
+                    submit()
+                  }
+                }}
+                className="w-full bg-transparent text-center text-5xl font-semibold tracking-tight outline-none"
+                style={{
+                  color: numericAmount > 0 ? 'var(--text-primary)' : 'var(--neutral-spend)',
+                  caretColor: 'var(--accent-primary)',
+                }}
+                placeholder="0"
+                aria-label="Montant"
+              />
+              <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">LYD</div>
+            </label>
+
+            {error ? (
+              <div
+                className="rounded-lg border px-3 py-2 text-xs"
+                style={{ borderColor: 'var(--negative)', color: 'var(--negative)' }}
+              >
+                {error}
+              </div>
+            ) : null}
+
+            <button
+              onClick={submit}
+              disabled={submitting || numericAmount <= 0}
+              className="flex items-center justify-center gap-2 rounded-xl py-3 text-base font-semibold transition disabled:opacity-50"
+              style={{
+                background: 'var(--accent-primary)',
+                color: '#111418',
+                boxShadow: '0 6px 20px rgba(245,200,66,0.25)',
+              }}
+            >
+              {submitting
+                ? 'Enregistrement…'
+                : `Retirer ${numericAmount > 0 ? formatLYD(numericAmount) : ''}`}
+            </button>
+          </section>
+
+          <section className="flex flex-col gap-3">
+            <div className="text-[11px] uppercase tracking-wider opacity-60">
+              Historique des parts par loyer
+            </div>
+            {history.length === 0 ? (
+              <div
+                className="rounded-xl border p-6 text-center text-xs opacity-60"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                Aucun loyer encore enregistré.
+              </div>
+            ) : (
+              <div
+                className="overflow-hidden rounded-2xl border"
+                style={{ borderColor: 'var(--border-color)', background: 'var(--elevated)' }}
+              >
+                {history.map((h, i) => (
+                  <ShareRow key={h.date + i} entry={h} last={i === history.length - 1} />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </div>
   )
+}
+
+function ShareRow({ entry, last }: { entry: PartnerShareEntry; last: boolean }) {
+  const positive = entry.share >= 0
+  return (
+    <div
+      className="flex items-start gap-3 px-3 py-3 md:px-4"
+      style={{ borderBottom: last ? 'none' : '1px solid var(--border-color)' }}
+    >
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="truncate text-sm font-medium">{entry.label}</div>
+        <div className="text-[11px] opacity-60">
+          {formatDateLong(entry.date)}
+          {entry.periodExpenses > 0 ? (
+            <>
+              {' · '}loyer {formatLYD(entry.rent)} − frais {formatLYD(entry.periodExpenses)}
+            </>
+          ) : null}
+          {entry.ownAdvances > 0 ? (
+            <>
+              {' · '}+{formatLYD(entry.ownAdvances)} remb. avance
+            </>
+          ) : null}
+        </div>
+      </div>
+      <div
+        className="whitespace-nowrap text-sm font-semibold md:text-base"
+        style={{ color: positive ? 'var(--positive)' : 'var(--negative)' }}
+      >
+        {positive ? '+' : ''}
+        {formatLYD(entry.share)}
+      </div>
+    </div>
+  )
+}
+
+function formatDateLong(date: string): string {
+  return new Date(date + 'T12:00:00').toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
 }
 
 function BigCard({

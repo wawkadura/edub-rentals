@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'edub-rentals-v6'
+const CACHE_VERSION = 'edub-rentals-v7'
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
