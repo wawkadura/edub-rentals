@@ -35,8 +35,27 @@ function useTheme() {
 
 export default function App() {
   const { theme, toggle } = useTheme()
-  const refresh = useRecords(s => s.refresh)
   const loading = useRecords(s => s.loading)
+
+  async function hardReload() {
+    if ('serviceWorker' in navigator) {
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        await Promise.all(regs.map(r => r.unregister()))
+      } catch {
+        // ignore
+      }
+    }
+    if ('caches' in window) {
+      try {
+        const keys = await caches.keys()
+        await Promise.all(keys.map(k => caches.delete(k)))
+      } catch {
+        // ignore
+      }
+    }
+    window.location.reload()
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -69,9 +88,9 @@ export default function App() {
 
         <div className="flex items-center gap-1">
           <button
-            onClick={() => refresh()}
+            onClick={hardReload}
             disabled={loading}
-            aria-label="Rafraîchir"
+            aria-label="Recharger l'application"
             className="rounded-md p-2 hover:bg-white/10 disabled:opacity-50"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : undefined} />
