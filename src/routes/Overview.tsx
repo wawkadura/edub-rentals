@@ -290,14 +290,43 @@ interface PartnerShareEntry {
 
 function buildPartnerHistory(records: TxRecord[], partner: Participant): PartnerShareEntry[] {
   const live = records.filter(r => !r.archive && !r.hide)
+  // Skip the historical bulk "Total revenus 2024-2025" Revenu — it's a
+  // placeholder for the period BEFORE the app was used; the actual
+  // per-partner rent income from that period was paid directly via the
+  // 14/12 + 30/12 Business → partner transfers (handled below).
+  const isBulkHistoricalRent = (r: TxRecord) => /^total\s+revenus/i.test(r.transaction)
   const revenus = live
-    .filter(r => r.nature === 'Revenu' && r.beneficiary === 'Business')
+    .filter(r => r.nature === 'Revenu' && r.beneficiary === 'Business' && !isBulkHistoricalRent(r))
     .sort((a, b) => (a.date < b.date ? -1 : 1))
   const expenses = live
     .filter(r => r.nature === 'Expense')
     .sort((a, b) => (a.date < b.date ? -1 : 1))
 
   const entries: PartnerShareEntry[] = []
+
+  // Direct-rent entries: Business → partner transfers BEFORE the first
+  // ongoing rent count as historical rent income paid directly to the
+  // partner (full amount, not divided).
+  const firstRentDate = revenus[0]?.date ?? '9999-12-31'
+  const directRents = live
+    .filter(r =>
+      r.nature === 'Transfer' &&
+      r.paid_by === 'Business' &&
+      r.beneficiary === partner &&
+      r.date < firstRentDate,
+    )
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+  for (const dr of directRents) {
+    entries.push({
+      date: dr.date,
+      label: dr.transaction,
+      rent: dr.amount,
+      periodExpenses: 0,
+      ownAdvances: 0,
+      share: dr.amount,
+    })
+  }
+
   for (let i = 0; i < revenus.length; i += 1) {
     const r = revenus[i]
     const next = revenus[i + 1]
@@ -321,7 +350,8 @@ function buildPartnerHistory(records: TxRecord[], partner: Participant): Partner
       share,
     })
   }
-  return entries.reverse()
+  // Most recent first
+  return entries.sort((a, b) => (a.date < b.date ? 1 : -1))
 }
 
 function PartnerModal({
