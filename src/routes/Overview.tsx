@@ -15,11 +15,7 @@ import { Wallet, Percent, X } from 'lucide-react'
 import type { ParticipantSummary, Participant, Record as TxRecord } from '../lib/types'
 
 function buildCumulativeSeries(records: TxRecord[]) {
-  // Drop pre-app "Total revenus/expenses 2024-2025" bulk summary records
-  // — they spike the Y-axis so much that ongoing variations become
-  // invisible. The chart shows the operational period only.
-  const isBulkSummary = (r: TxRecord) => /^total\s+(revenus|expenses)/i.test(r.transaction)
-  const live = records.filter(r => !r.archive && !r.hide && !isBulkSummary(r))
+  const live = records.filter(r => !r.archive && !r.hide)
   const sorted = [...live].sort((a, b) => (a.date < b.date ? -1 : 1))
   const series: { date: string; label: string; revenus: number; expenses: number }[] = []
   let revenus = 0
@@ -46,6 +42,19 @@ function formatMonthLabel(date: string): string {
   return d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' })
 }
 
+function sliceSeriesByRange<T extends { date: string }>(series: T[], range: ChartRange): T[] {
+  if (range === 'all' || series.length === 0) return series
+  const months = range === '3m' ? 3 : range === '6m' ? 6 : 12
+  const cutoff = new Date()
+  cutoff.setMonth(cutoff.getMonth() - months)
+  const cutoffStr = cutoff.toISOString().slice(0, 10)
+  // Keep the LAST point before cutoff so the visible cumulative starts
+  // at the right baseline (carries the historical sum forward).
+  const idx = series.findIndex(s => s.date >= cutoffStr)
+  if (idx <= 0) return series
+  return series.slice(idx - 1)
+}
+
 function formatCompact(n: number): string {
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (Math.abs(n) >= 1_000) return `${Math.round(n / 1_000)}k`
@@ -59,9 +68,12 @@ function buildParticipantRows(p: ParticipantSummary, totalEarned: number) {
   ]
 }
 
+type ChartRange = '3m' | '6m' | '1y' | 'all'
+
 export default function Overview() {
   const { summary, records, loading, error, refresh, add } = useRecords()
   const [withdrawFor, setWithdrawFor] = useState<Participant | null>(null)
+  const [chartRange, setChartRange] = useState<ChartRange>('all')
 
   useEffect(() => {
     refresh()
@@ -73,7 +85,11 @@ export default function Overview() {
     return (pnl / summary.total_invested) * 100
   }, [summary])
 
-  const cumulativeSeries = useMemo(() => buildCumulativeSeries(records), [records])
+  const fullSeries = useMemo(() => buildCumulativeSeries(records), [records])
+  const cumulativeSeries = useMemo(
+    () => sliceSeriesByRange(fullSeries, chartRange),
+    [fullSeries, chartRange],
+  )
 
   if (loading && !summary) return <Centered>Chargement…</Centered>
   if (error) return <Centered>Erreur : {error}</Centered>
@@ -131,7 +147,7 @@ export default function Overview() {
           className="flex flex-col gap-3 rounded-2xl border p-4 md:p-5"
           style={{ borderColor: 'var(--border-color)', background: 'var(--elevated)' }}
         >
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-3">
             <div className="text-xs uppercase tracking-wider opacity-60">Cumul revenus / dépenses</div>
             <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider opacity-60">
               <span className="flex items-center gap-1">
@@ -149,6 +165,28 @@ export default function Overview() {
                 Dépenses
               </span>
             </div>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto">
+            {(['3m', '6m', '1y', 'all'] as ChartRange[]).map(r => {
+              const active = chartRange === r
+              return (
+                <button
+                  key={r}
+                  onClick={() => setChartRange(r)}
+                  className="whitespace-nowrap rounded-full border px-3 py-1 text-[10px] uppercase tracking-wider transition"
+                  style={{
+                    borderColor: active ? 'var(--accent-primary)' : 'var(--border-color)',
+                    color: active ? 'var(--accent-primary)' : 'var(--text-primary)',
+                    background: active
+                      ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
+                      : 'transparent',
+                  }}
+                >
+                  {r === '3m' ? '3 mois' : r === '6m' ? '6 mois' : r === '1y' ? '1 an' : 'Tout'}
+                </button>
+              )
+            })}
           </div>
           <div className="h-48 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -177,7 +215,9 @@ export default function Overview() {
                   tickLine={false}
                   axisLine={{ stroke: 'var(--border-color)' }}
                   tickFormatter={v => formatCompact(v as number)}
-                  width={48}
+                  width={56}
+                  domain={['dataMin', 'dataMax']}
+                  allowDataOverflow={false}
                 />
                 <Tooltip
                   contentStyle={{
