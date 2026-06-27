@@ -1,5 +1,5 @@
-const CACHE_VERSION = 'edub-rentals-v10'
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest']
+const CACHE_VERSION = 'edub-rentals-v11'
+const APP_SHELL = ['/', '/index.html']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -22,6 +22,13 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
   const url = new URL(request.url)
   if (url.pathname.startsWith('/api/')) return
+  // Manifest + branded icons: network-only so updates ship instantly.
+  if (
+    url.pathname.endsWith('.webmanifest') ||
+    /^\/(icon-\d+|favicon-?\d*|apple-touch-icon)\.png$/.test(url.pathname)
+  ) {
+    return
+  }
   event.respondWith(cacheFirst(request))
 })
 
