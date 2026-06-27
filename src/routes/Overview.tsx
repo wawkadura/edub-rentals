@@ -15,7 +15,11 @@ import { Wallet, Percent, X } from 'lucide-react'
 import type { ParticipantSummary, Participant, Record as TxRecord } from '../lib/types'
 
 function buildCumulativeSeries(records: TxRecord[]) {
-  const live = records.filter(r => !r.archive && !r.hide)
+  // Drop pre-app "Total revenus/expenses 2024-2025" bulk summary records
+  // — they spike the Y-axis so much that ongoing variations become
+  // invisible. The chart shows the operational period only.
+  const isBulkSummary = (r: TxRecord) => /^total\s+(revenus|expenses)/i.test(r.transaction)
+  const live = records.filter(r => !r.archive && !r.hide && !isBulkSummary(r))
   const sorted = [...live].sort((a, b) => (a.date < b.date ? -1 : 1))
   const series: { date: string; label: string; revenus: number; expenses: number }[] = []
   let revenus = 0
@@ -48,10 +52,10 @@ function formatCompact(n: number): string {
   return String(Math.round(n))
 }
 
-function buildParticipantRows(p: ParticipantSummary) {
+function buildParticipantRows(p: ParticipantSummary, totalEarned: number) {
   return [
     { label: 'Investi', value: formatLYD(p.invested) },
-    { label: 'Reçu', value: formatLYD(p.distributed) },
+    { label: 'Reçu', value: formatLYD(totalEarned) },
   ]
 }
 
@@ -70,6 +74,14 @@ export default function Overview() {
   }, [summary])
 
   const cumulativeSeries = useMemo(() => buildCumulativeSeries(records), [records])
+  const walidEarned = useMemo(
+    () => buildPartnerHistory(records, 'Walid').reduce((s, e) => s + e.share, 0),
+    [records],
+  )
+  const sofianEarned = useMemo(
+    () => buildPartnerHistory(records, 'Sofian').reduce((s, e) => s + e.share, 0),
+    [records],
+  )
 
   if (loading && !summary) return <Centered>Chargement…</Centered>
   if (error) return <Centered>Erreur : {error}</Centered>
@@ -94,7 +106,7 @@ export default function Overview() {
           label="Walid"
           primary={formatLYD(walid.net)}
           primaryColor={walid.net >= 0 ? 'var(--positive)' : 'var(--negative)'}
-          rows={buildParticipantRows(walid)}
+          rows={buildParticipantRows(walid, walidEarned)}
           onClick={() => setWithdrawFor('Walid')}
         />
         <BigCard
@@ -102,7 +114,7 @@ export default function Overview() {
           label="Sofian"
           primary={formatLYD(sofian.net)}
           primaryColor={sofian.net >= 0 ? 'var(--positive)' : 'var(--negative)'}
-          rows={buildParticipantRows(sofian)}
+          rows={buildParticipantRows(sofian, sofianEarned)}
           onClick={() => setWithdrawFor('Sofian')}
         />
       </section>
