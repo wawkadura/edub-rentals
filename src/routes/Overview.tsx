@@ -61,10 +61,10 @@ function formatCompact(n: number): string {
   return String(Math.round(n))
 }
 
-function buildParticipantRows(p: ParticipantSummary, totalEarned: number) {
+function buildParticipantRows(p: ParticipantSummary) {
   return [
     { label: 'Investi', value: formatLYD(p.invested) },
-    { label: 'Reçu', value: formatLYD(totalEarned) },
+    { label: 'Reçu', value: formatLYD(p.distributed) },
   ]
 }
 
@@ -114,7 +114,7 @@ export default function Overview() {
           label="Walid"
           primary={formatLYD(walid.net)}
           primaryColor={walid.net >= 0 ? 'var(--positive)' : 'var(--negative)'}
-          rows={buildParticipantRows(walid, Math.round(walid.earned))}
+          rows={buildParticipantRows(walid)}
           onClick={() => setWithdrawFor('Walid')}
         />
         <BigCard
@@ -122,7 +122,7 @@ export default function Overview() {
           label="Sofian"
           primary={formatLYD(sofian.net)}
           primaryColor={sofian.net >= 0 ? 'var(--positive)' : 'var(--negative)'}
-          rows={buildParticipantRows(sofian, Math.round(sofian.earned))}
+          rows={buildParticipantRows(sofian)}
           onClick={() => setWithdrawFor('Sofian')}
         />
       </section>
