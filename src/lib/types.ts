@@ -50,6 +50,7 @@ export interface ParticipantSummary {
   expenses_advanced: number
   expenses_reimbursed: number
   advance_due: number
+  earned: number
 }
 
 export interface SummaryResponse {

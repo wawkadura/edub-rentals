@@ -11,6 +11,7 @@ export interface ParticipantSummary {
   expenses_advanced: number
   expenses_reimbursed: number
   advance_due: number
+  earned: number
 }
 
 export interface SummaryResponse {
@@ -32,6 +33,41 @@ interface PerParticipant {
   distributed: number
   expenses_advanced: number
   expenses_reimbursed: number
+}
+
+// Per-rent share: net (rent − period expenses) split 50/50, plus the
+// partner's own advances in the period (full reimbursement). Period
+// is forward: [rent_date, next_rent_date).
+function computeEarnedByPartner(
+  live: TxRecord[],
+  partners: Participant[],
+): { [K in Participant]?: number } {
+  const revenus = live
+    .filter(r => r.nature === 'Revenu' && r.beneficiary === 'Business')
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+  const expenses = live
+    .filter(r => r.nature === 'Expense')
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+
+  const earned: { [K in Participant]?: number } = {}
+  for (const p of partners) earned[p] = 0
+
+  for (let i = 0; i < revenus.length; i += 1) {
+    const r = revenus[i]
+    const next = revenus[i + 1]
+    const periodEnd = next ? next.date : '9999-12-31'
+    const inPeriod = expenses.filter(e => e.date >= r.date && e.date < periodEnd)
+    const totalExpense = inPeriod.reduce((s, e) => s + e.amount, 0)
+    const net = r.amount - totalExpense
+    const baseShare = net / 2
+    for (const partner of partners) {
+      const ownAdvances = inPeriod
+        .filter(e => e.paid_by === partner)
+        .reduce((s, e) => s + e.amount, 0)
+      earned[partner] = (earned[partner] ?? 0) + baseShare + ownAdvances
+    }
+  }
+  return earned
 }
 
 function zero(): PerParticipant {
@@ -117,44 +153,51 @@ export function computeSummary(records: TxRecord[]): SummaryResponse {
 
   const treasury = cash_in - cash_out
 
-  // Walid 2026-06-02 (v5): when a partner advances cash for a joint
-  // expense, only HALF of the unreimbursed advance is treated as a
-  // receivable. The other half is that partner's own share of the
-  // expense — they would have had to pay it anyway as a 50% owner.
+  // Walid 2026-06-27 (v6): solde formula = invested + earned − withdrawn.
   //
-  //   advance_due(partner)  = unreimbursed(partner) / 2
-  //   equityShare           = (treasury − Σ advance_due) / 2
-  //   solde(partner)        = equityShare + advance_due(partner)
+  //   earned(P)     = Σ per-rent shares for P (forward window
+  //                   [rent_date, next_rent_date), with full advance
+  //                   reimbursement)
+  //   withdrawn(P)  = Σ Business → P transfers (Distribution + Paying back)
+  //   solde(P)      = invested(P) + earned(P) − withdrawn(P)
   //
   // Properties:
-  //   • Walid.solde + Sofian.solde = treasury (by construction)
-  //   • When Sofian advances 450, only 225 is "owed to him" by the
-  //     joint partnership (the other 225 is his own share).
-  //   • When the advance is fully reimbursed (treasury drops by the
-  //     full advance), the soldes equalize.
+  //   • Withdrawing from one partner only impacts that partner's solde
+  //     (the previous V5 split-equity formula reduced both, which Walid
+  //     rejected).
+  //   • By construction, Σ partner soldes = treasury — because:
+  //       Σ invested = total partner capital in
+  //       Σ earned   = Σ rent − B→B expenses (advances cancel pair-wise)
+  //       Σ withdrawn = Σ B→partner cash out
+  //       so Σ solde = cash_in − cash_out − B→B leftover = treasury.
   //
   // Client and Business get solde = 0 (not partners).
   const PARTNERS: Participant[] = ['Walid', 'Sofian']
-  const advanceDueByPartner: { [K in Participant]?: number } = {}
-  let advanceDueTotal = 0
-  for (const partner of PARTNERS) {
-    const p = perPart[partner]
-    const unreimbursed = Math.max(0, p.expenses_advanced - p.expenses_reimbursed)
-    const due = unreimbursed / 2
-    advanceDueByPartner[partner] = due
-    advanceDueTotal += due
-  }
-  const equityShare = (treasury - advanceDueTotal) / 2
+  const earnedByPartner = computeEarnedByPartner(live, PARTNERS)
 
-  // Compute partner soldes first, then enforce the invariant
-  // sum(partners) = treasury by giving any rounding remainder to the
-  // first partner (so we don't display values that don't sum cleanly).
+  // Any Business → partner transfer counts as "withdrawn", regardless of
+  // tag (Distribution, Paying back, or untagged).
+  const withdrawnByPartner: { [K in Participant]?: number } = {}
+  for (const partner of PARTNERS) withdrawnByPartner[partner] = 0
+  for (const r of live) {
+    if (
+      r.nature === 'Transfer' &&
+      r.paid_by === 'Business' &&
+      PARTNERS.includes(r.beneficiary)
+    ) {
+      withdrawnByPartner[r.beneficiary] = (withdrawnByPartner[r.beneficiary] ?? 0) + r.amount
+    }
+  }
+
   const partnerSoldes: { [K in Participant]?: number } = {}
   for (const partner of PARTNERS) {
-    partnerSoldes[partner] = Math.round(
-      equityShare + (advanceDueByPartner[partner] ?? 0),
-    )
+    const p = perPart[partner]
+    const earned = earnedByPartner[partner] ?? 0
+    const withdrawn = withdrawnByPartner[partner] ?? 0
+    partnerSoldes[partner] = Math.round(p.invested + earned - withdrawn)
   }
+  // Enforce the invariant Σ partner soldes = treasury exactly (any
+  // rounding remainder lands on Walid).
   const partnerSum = PARTNERS.reduce((acc, p) => acc + (partnerSoldes[p] ?? 0), 0)
   const remainder = Math.round(treasury) - partnerSum
   if (remainder !== 0 && PARTNERS.length > 0) {
@@ -164,12 +207,13 @@ export function computeSummary(records: TxRecord[]): SummaryResponse {
 
   const participants = ALL_PARTICIPANTS.map(name => {
     const p = perPart[name]
-    const due = advanceDueByPartner[name] ?? 0
+    const earned = earnedByPartner[name] ?? 0
     const solde = PARTNERS.includes(name) ? (partnerSoldes[name] ?? 0) : 0
     return {
       name,
       ...p,
-      advance_due: due,
+      advance_due: 0, // kept for type stability, unused since v6
+      earned,
       net: solde,
     } as ParticipantSummary
   })

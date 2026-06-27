@@ -74,14 +74,6 @@ export default function Overview() {
   }, [summary])
 
   const cumulativeSeries = useMemo(() => buildCumulativeSeries(records), [records])
-  const walidEarned = useMemo(
-    () => buildPartnerHistory(records, 'Walid').reduce((s, e) => s + e.share, 0),
-    [records],
-  )
-  const sofianEarned = useMemo(
-    () => buildPartnerHistory(records, 'Sofian').reduce((s, e) => s + e.share, 0),
-    [records],
-  )
 
   if (loading && !summary) return <Centered>Chargement…</Centered>
   if (error) return <Centered>Erreur : {error}</Centered>
@@ -106,7 +98,7 @@ export default function Overview() {
           label="Walid"
           primary={formatLYD(walid.net)}
           primaryColor={walid.net >= 0 ? 'var(--positive)' : 'var(--negative)'}
-          rows={buildParticipantRows(walid, walidEarned)}
+          rows={buildParticipantRows(walid, Math.round(walid.earned))}
           onClick={() => setWithdrawFor('Walid')}
         />
         <BigCard
@@ -114,7 +106,7 @@ export default function Overview() {
           label="Sofian"
           primary={formatLYD(sofian.net)}
           primaryColor={sofian.net >= 0 ? 'var(--positive)' : 'var(--negative)'}
-          rows={buildParticipantRows(sofian, sofianEarned)}
+          rows={buildParticipantRows(sofian, Math.round(sofian.earned))}
           onClick={() => setWithdrawFor('Sofian')}
         />
       </section>
