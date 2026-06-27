@@ -3,10 +3,14 @@ import type { Record, RecordsFile, SummaryResponse } from './types'
 const BASE = '/api'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
+  const headers: { [k: string]: string } = { ...(init?.headers as { [k: string]: string }) }
+  // Only set JSON content-type when there's actually a body, otherwise
+  // Fastify tries to parse an empty payload and rejects with
+  // "Unexpected end of JSON input".
+  if (init?.body != null && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
+  const res = await fetch(`${BASE}${path}`, { ...init, headers })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(`${res.status} ${res.statusText} — ${text}`)
