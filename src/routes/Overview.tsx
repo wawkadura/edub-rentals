@@ -256,9 +256,12 @@ function buildPartnerHistory(records: TxRecord[], partner: Participant): Partner
   const entries: PartnerShareEntry[] = []
   for (let i = 0; i < revenus.length; i += 1) {
     const r = revenus[i]
-    const prev = revenus[i - 1]
-    const periodStart = prev ? prev.date : '0000-00-00'
-    const inPeriod = expenses.filter(e => e.date > periodStart && e.date <= r.date)
+    const next = revenus[i + 1]
+    // Window: expenses AFTER this rent (inclusive of same day) and
+    // BEFORE the next rent. The rent "covers" the operating cost of
+    // its own period until the next rent comes in.
+    const periodEnd = next ? next.date : '9999-12-31'
+    const inPeriod = expenses.filter(e => e.date >= r.date && e.date < periodEnd)
     const totalExpense = inPeriod.reduce((s, e) => s + e.amount, 0)
     const ownAdvances = inPeriod
       .filter(e => e.paid_by === partner)
