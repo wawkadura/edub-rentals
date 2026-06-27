@@ -1,25 +1,54 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import { useRecords } from '../stores/records'
 import { formatLYD } from '../lib/format'
 import { Wallet, Percent, X } from 'lucide-react'
 import type { ParticipantSummary, Participant, Record as TxRecord } from '../lib/types'
 
-interface PeriodTotals {
+interface CumulPoint {
+  date: string
+  label: string
   revenus: number
   expenses: number
 }
 
-function computePeriodTotals(records: TxRecord[], cutoffDate: string): PeriodTotals {
+// Cumulative revenus + dépenses starting from cutoff. Records before
+// cutoff are skipped, so the curves start at 0 at the window start
+// and grow over the visible period.
+function buildCumulativeFromCutoff(records: TxRecord[], cutoffDate: string): CumulPoint[] {
+  const live = records.filter(
+    r =>
+      !r.archive &&
+      !r.hide &&
+      r.date >= cutoffDate &&
+      (r.nature === 'Revenu' || r.nature === 'Expense'),
+  )
+  const sorted = [...live].sort((a, b) => (a.date < b.date ? -1 : 1))
+  const series: CumulPoint[] = []
   let revenus = 0
   let expenses = 0
-  for (const r of records) {
-    if (r.archive || r.hide) continue
-    if (r.date < cutoffDate) continue
+  let current: CumulPoint | null = null
+  for (const r of sorted) {
     if (r.nature === 'Revenu') revenus += r.amount
-    else if (r.nature === 'Expense') expenses += r.amount
+    else expenses += r.amount
+    if (current && current.date === r.date) {
+      current.revenus = revenus
+      current.expenses = expenses
+    } else {
+      current = { date: r.date, label: formatMonthLabel(r.date), revenus, expenses }
+      series.push(current)
+    }
   }
-  return { revenus, expenses }
+  return series
 }
 
 function cutoffForRange(range: ChartRange): string {
@@ -30,27 +59,17 @@ function cutoffForRange(range: ChartRange): string {
   return d.toISOString().slice(0, 10)
 }
 
-function PeriodTotalTile({
-  label,
-  value,
-  color,
-}: {
-  label: string
-  value: string
-  color: string
-}) {
-  return (
-    <div
-      className="flex flex-col gap-1 rounded-xl border p-4"
-      style={{ borderColor: 'var(--border-color)' }}
-    >
-      <div className="text-[10px] uppercase tracking-wider opacity-60">{label}</div>
-      <div className="text-2xl font-semibold tracking-tight md:text-3xl" style={{ color }}>
-        {value}
-      </div>
-    </div>
-  )
+function formatMonthLabel(date: string): string {
+  const d = new Date(date + 'T12:00:00')
+  return d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' })
 }
+
+function formatCompact(n: number): string {
+  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (Math.abs(n) >= 1_000) return `${Math.round(n / 1_000)}k`
+  return String(Math.round(n))
+}
+
 
 function buildParticipantRows(p: ParticipantSummary) {
   return [
@@ -76,8 +95,8 @@ export default function Overview() {
     return (pnl / summary.total_invested) * 100
   }, [summary])
 
-  const periodTotals = useMemo(
-    () => computePeriodTotals(records, cutoffForRange(chartRange)),
+  const cumulativeSeries = useMemo(
+    () => buildCumulativeFromCutoff(records, cutoffForRange(chartRange)),
     [records, chartRange],
   )
 
@@ -132,49 +151,115 @@ export default function Overview() {
         />
       </section>
 
-      <section
-        className="flex flex-col gap-3 rounded-2xl border p-4 md:p-5"
-        style={{ borderColor: 'var(--border-color)', background: 'var(--elevated)' }}
-      >
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-3">
-          <div className="text-xs uppercase tracking-wider opacity-60">Revenus / dépenses</div>
-        </div>
+      {cumulativeSeries.length > 0 ? (
+        <section
+          className="flex flex-col gap-3 rounded-2xl border p-4 md:p-5"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--elevated)' }}
+        >
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-3">
+            <div className="text-xs uppercase tracking-wider opacity-60">Cumul revenus / dépenses</div>
+            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider opacity-60">
+              <span className="flex items-center gap-1">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ background: 'var(--positive)' }}
+                />
+                Revenus
+              </span>
+              <span className="flex items-center gap-1">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ background: 'var(--negative)' }}
+                />
+                Dépenses
+              </span>
+            </div>
+          </div>
 
-        <div className="flex gap-2 overflow-x-auto">
-          {(['3m', '6m', '1y', 'all'] as ChartRange[]).map(r => {
-            const active = chartRange === r
-            return (
-              <button
-                key={r}
-                onClick={() => setChartRange(r)}
-                className="whitespace-nowrap rounded-full border px-3 py-1 text-[10px] uppercase tracking-wider transition"
-                style={{
-                  borderColor: active ? 'var(--accent-primary)' : 'var(--border-color)',
-                  color: active ? 'var(--accent-primary)' : 'var(--text-primary)',
-                  background: active
-                    ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
-                    : 'transparent',
-                }}
-              >
-                {r === '3m' ? '3 mois' : r === '6m' ? '6 mois' : r === '1y' ? '1 an' : 'Tout'}
-              </button>
-            )
-          })}
-        </div>
+          <div className="flex gap-2 overflow-x-auto">
+            {(['3m', '6m', '1y', 'all'] as ChartRange[]).map(r => {
+              const active = chartRange === r
+              return (
+                <button
+                  key={r}
+                  onClick={() => setChartRange(r)}
+                  className="whitespace-nowrap rounded-full border px-3 py-1 text-[10px] uppercase tracking-wider transition"
+                  style={{
+                    borderColor: active ? 'var(--accent-primary)' : 'var(--border-color)',
+                    color: active ? 'var(--accent-primary)' : 'var(--text-primary)',
+                    background: active
+                      ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)'
+                      : 'transparent',
+                  }}
+                >
+                  {r === '3m' ? '3 mois' : r === '6m' ? '6 mois' : r === '1y' ? '1 an' : 'Tout'}
+                </button>
+              )
+            })}
+          </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <PeriodTotalTile
-            label="Revenus"
-            value={formatLYD(periodTotals.revenus)}
-            color="var(--positive)"
-          />
-          <PeriodTotalTile
-            label="Dépenses"
-            value={formatLYD(periodTotals.expenses)}
-            color="var(--negative)"
-          />
-        </div>
-      </section>
+          <div className="h-48 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={cumulativeSeries} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="revenusFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--positive)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="var(--positive)" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="expensesFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--negative)" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="var(--negative)" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="var(--border-color)" strokeDasharray="2 4" vertical={false} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fill: 'var(--text-primary)', opacity: 0.6, fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={{ stroke: 'var(--border-color)' }}
+                  interval="preserveStartEnd"
+                  minTickGap={32}
+                />
+                <YAxis
+                  tick={{ fill: 'var(--text-primary)', opacity: 0.6, fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={{ stroke: 'var(--border-color)' }}
+                  tickFormatter={v => formatCompact(v as number)}
+                  width={56}
+                  domain={['dataMin', 'dataMax']}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: 'var(--elevated)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 12,
+                    color: 'var(--text-primary)',
+                    fontSize: 12,
+                  }}
+                  labelStyle={{ color: 'var(--text-primary)', opacity: 0.7, fontSize: 11 }}
+                  formatter={value => [formatLYD(Number(value) || 0), '']}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="revenus"
+                  name="Revenus"
+                  stroke="var(--positive)"
+                  strokeWidth={2}
+                  fill="url(#revenusFill)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="expenses"
+                  name="Dépenses"
+                  stroke="var(--negative)"
+                  strokeWidth={2}
+                  fill="url(#expensesFill)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      ) : null}
 
       {withdrawFor ? (
         <PartnerModal
