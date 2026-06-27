@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -14,27 +14,28 @@ import { formatLYD } from '../lib/format'
 import { Wallet, Percent, X } from 'lucide-react'
 import type { ParticipantSummary, Participant, Record as TxRecord } from '../lib/types'
 
-function buildCumulativeSeries(records: TxRecord[]) {
+interface MonthlyFlow {
+  month: string // YYYY-MM
+  label: string // "mai 26"
+  revenus: number
+  expenses: number
+}
+
+function buildMonthlyFlow(records: TxRecord[]): MonthlyFlow[] {
   const live = records.filter(r => !r.archive && !r.hide)
-  const sorted = [...live].sort((a, b) => (a.date < b.date ? -1 : 1))
-  const series: { date: string; label: string; revenus: number; expenses: number }[] = []
-  let revenus = 0
-  let expenses = 0
-  let current: { date: string; label: string; revenus: number; expenses: number } | null = null
-  for (const r of sorted) {
-    if (r.nature === 'Revenu') revenus += r.amount
-    else if (r.nature === 'Expense') expenses += r.amount
-    else continue
-    const label = formatMonthLabel(r.date)
-    if (current && current.date === r.date) {
-      current.revenus = revenus
-      current.expenses = expenses
-    } else {
-      current = { date: r.date, label, revenus, expenses }
-      series.push(current)
+  const byMonth = new Map<string, MonthlyFlow>()
+  for (const r of live) {
+    if (r.nature !== 'Revenu' && r.nature !== 'Expense') continue
+    const month = r.date.slice(0, 7)
+    let entry = byMonth.get(month)
+    if (!entry) {
+      entry = { month, label: formatMonthLabel(r.date), revenus: 0, expenses: 0 }
+      byMonth.set(month, entry)
     }
+    if (r.nature === 'Revenu') entry.revenus += r.amount
+    else entry.expenses += r.amount
   }
-  return series
+  return Array.from(byMonth.values()).sort((a, b) => (a.month < b.month ? -1 : 1))
 }
 
 function formatMonthLabel(date: string): string {
@@ -42,17 +43,13 @@ function formatMonthLabel(date: string): string {
   return d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' })
 }
 
-function sliceSeriesByRange<T extends { date: string }>(series: T[], range: ChartRange): T[] {
+function sliceMonthlyByRange(series: MonthlyFlow[], range: ChartRange): MonthlyFlow[] {
   if (range === 'all' || series.length === 0) return series
   const months = range === '3m' ? 3 : range === '6m' ? 6 : 12
   const cutoff = new Date()
   cutoff.setMonth(cutoff.getMonth() - months)
-  const cutoffStr = cutoff.toISOString().slice(0, 10)
-  // Keep the LAST point before cutoff so the visible cumulative starts
-  // at the right baseline (carries the historical sum forward).
-  const idx = series.findIndex(s => s.date >= cutoffStr)
-  if (idx <= 0) return series
-  return series.slice(idx - 1)
+  const cutoffStr = cutoff.toISOString().slice(0, 7) // YYYY-MM
+  return series.filter(s => s.month >= cutoffStr)
 }
 
 function formatCompact(n: number): string {
@@ -85,10 +82,10 @@ export default function Overview() {
     return (pnl / summary.total_invested) * 100
   }, [summary])
 
-  const fullSeries = useMemo(() => buildCumulativeSeries(records), [records])
-  const cumulativeSeries = useMemo(
-    () => sliceSeriesByRange(fullSeries, chartRange),
-    [fullSeries, chartRange],
+  const fullMonthly = useMemo(() => buildMonthlyFlow(records), [records])
+  const monthlySeries = useMemo(
+    () => sliceMonthlyByRange(fullMonthly, chartRange),
+    [fullMonthly, chartRange],
   )
 
   if (loading && !summary) return <Centered>Chargement…</Centered>
@@ -142,13 +139,13 @@ export default function Overview() {
         />
       </section>
 
-      {cumulativeSeries.length > 1 ? (
+      {monthlySeries.length > 0 ? (
         <section
           className="flex flex-col gap-3 rounded-2xl border p-4 md:p-5"
           style={{ borderColor: 'var(--border-color)', background: 'var(--elevated)' }}
         >
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-3">
-            <div className="text-xs uppercase tracking-wider opacity-60">Cumul revenus / dépenses</div>
+            <div className="text-xs uppercase tracking-wider opacity-60">Revenus / dépenses par mois</div>
             <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider opacity-60">
               <span className="flex items-center gap-1">
                 <span
@@ -190,17 +187,7 @@ export default function Overview() {
           </div>
           <div className="h-48 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={cumulativeSeries} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="revenusFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--positive)" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="var(--positive)" stopOpacity={0.02} />
-                  </linearGradient>
-                  <linearGradient id="expensesFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--negative)" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="var(--negative)" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
+              <BarChart data={monthlySeries} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke="var(--border-color)" strokeDasharray="2 4" vertical={false} />
                 <XAxis
                   dataKey="label"
@@ -208,7 +195,7 @@ export default function Overview() {
                   tickLine={false}
                   axisLine={{ stroke: 'var(--border-color)' }}
                   interval="preserveStartEnd"
-                  minTickGap={32}
+                  minTickGap={16}
                 />
                 <YAxis
                   tick={{ fill: 'var(--text-primary)', opacity: 0.6, fontSize: 10 }}
@@ -216,10 +203,9 @@ export default function Overview() {
                   axisLine={{ stroke: 'var(--border-color)' }}
                   tickFormatter={v => formatCompact(v as number)}
                   width={56}
-                  domain={['dataMin', 'dataMax']}
-                  allowDataOverflow={false}
                 />
                 <Tooltip
+                  cursor={{ fill: 'color-mix(in srgb, var(--text-primary) 6%, transparent)' }}
                   contentStyle={{
                     background: 'var(--elevated)',
                     border: '1px solid var(--border-color)',
@@ -230,23 +216,19 @@ export default function Overview() {
                   labelStyle={{ color: 'var(--text-primary)', opacity: 0.7, fontSize: 11 }}
                   formatter={value => [formatLYD(Number(value) || 0), '']}
                 />
-                <Area
-                  type="monotone"
+                <Bar
                   dataKey="revenus"
                   name="Revenus"
-                  stroke="var(--positive)"
-                  strokeWidth={2}
-                  fill="url(#revenusFill)"
+                  fill="var(--positive)"
+                  radius={[4, 4, 0, 0]}
                 />
-                <Area
-                  type="monotone"
+                <Bar
                   dataKey="expenses"
                   name="Dépenses"
-                  stroke="var(--negative)"
-                  strokeWidth={2}
-                  fill="url(#expensesFill)"
+                  fill="var(--negative)"
+                  radius={[4, 4, 0, 0]}
                 />
-              </AreaChart>
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </section>
