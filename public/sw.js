@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'edub-rentals-v11'
+const CACHE_VERSION = 'edub-rentals-v12'
 const APP_SHELL = ['/', '/index.html']
 
 self.addEventListener('install', (event) => {

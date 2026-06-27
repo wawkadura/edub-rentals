@@ -316,7 +316,7 @@ function PartnerModal({
   return (
     <div
       className="fixed inset-0 z-30 flex flex-col"
-      style={{ background: 'var(--bg)' }}
+      style={{ background: 'var(--surface)' }}
     >
       <header
         className="sticky top-0 z-10 flex items-center justify-between border-b px-4 py-3 md:px-8"
