@@ -1,6 +1,12 @@
 import Fastify from 'fastify'
+import { runMigrations } from './db/migrate.ts'
+import { DB_PATH } from './db/client.ts'
 import { recordsRoutes } from './routes/records.ts'
-import { DATA_DIR } from './lib/data-store.ts'
+import { logRoutes } from './routes/log.ts'
+
+// Apply Drizzle migrations on boot — schema appears + DB file created on
+// first run, idempotent on subsequent runs.
+runMigrations()
 
 const fastify = Fastify({ logger: false, bodyLimit: 256 * 1024 })
 
@@ -22,8 +28,9 @@ fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, b
 })
 
 await recordsRoutes(fastify)
+await logRoutes(fastify)
 
 const port = 3007
 await fastify.listen({ port, host: '127.0.0.1' })
 console.log(`[edub-rentals] API listening on http://localhost:${port}`)
-console.log(`[edub-rentals] data dir: ${DATA_DIR}`)
+console.log(`[edub-rentals] sqlite db: ${DB_PATH}`)

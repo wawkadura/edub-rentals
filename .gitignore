@@ -5,3 +5,8 @@ dist
 .env
 .env.local
 node_modules/.tmp
+
+# SQLite DB + WAL journals (runtime, backed up via edub-backup)
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal

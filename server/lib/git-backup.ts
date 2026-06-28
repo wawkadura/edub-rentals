@@ -1,37 +1,8 @@
-import { execFile } from 'node:child_process'
-import { DATA_DIR } from './data-store.ts'
+// No-op stub. The original per-write git push to wawkadura/edub-rentals-data
+// is gone — the SQLite DB at data/rentals.sqlite is snapshot nightly by
+// edub-backup via `sqlite3 .backup`. Kept as a stub so route handlers that
+// still import `scheduleBackup` keep building.
 
-let timer: ReturnType<typeof setTimeout> | null = null
-
-export function scheduleBackup(message: string): void {
-  if (timer) clearTimeout(timer)
-  timer = setTimeout(() => {
-    timer = null
-    runBackup(message)
-  }, 5000)
-}
-
-function runBackup(message: string): void {
-  execFile('git', ['-C', DATA_DIR, 'diff', '--quiet'], (diffErr) => {
-    if (!diffErr) return
-    execFile('git', ['-C', DATA_DIR, 'add', '-A'], (addErr) => {
-      if (addErr) {
-        console.error('[git-backup] git add failed:', addErr.message)
-        return
-      }
-      execFile('git', ['-C', DATA_DIR, 'commit', '-m', message], (commitErr) => {
-        if (commitErr) {
-          console.error('[git-backup] git commit failed:', commitErr.message)
-          return
-        }
-        execFile('git', ['-C', DATA_DIR, 'push'], (pushErr) => {
-          if (pushErr) {
-            console.error('[git-backup] git push failed:', pushErr.message)
-            return
-          }
-          console.log('[git-backup] backup committed and pushed:', message)
-        })
-      })
-    })
-  })
+export function scheduleBackup(_message: string): void {
+  // intentionally empty
 }
