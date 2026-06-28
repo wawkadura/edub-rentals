@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useRecords } from '../stores/records'
+import { PageSkeleton } from '../components/ui/Skeleton'
 import { formatLYD, formatDate } from '../lib/format'
 import { ALL_NATURES } from '../lib/types'
 import type { Record as TxRecord, Nature } from '../lib/types'
@@ -10,12 +11,11 @@ type NatureFilter = 'all' | Nature
 
 export default function Transactions() {
   const navigate = useNavigate()
-  const { records, loading, error, refresh } = useRecords()
+  const { records, loading, error } = useRecords()
   const [filter, setFilter] = useState<NatureFilter>('all')
 
-  useEffect(() => {
-    refresh()
-  }, [refresh])
+  // Data is loaded by App.tsx via useEnsureStores. Re-visit hits the store
+  // (no refetch). Pull-to-refresh triggers `refresh()` from App.tsx.
 
   const { grouped, totals } = useMemo(() => {
     const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1))
@@ -87,7 +87,7 @@ export default function Transactions() {
       </div>
 
       {loading && !records.length ? (
-        <div className="opacity-60">Chargement…</div>
+        <PageSkeleton />
       ) : error ? (
         <div style={{ color: 'var(--negative)' }}>{error}</div>
       ) : grouped.length === 0 ? (

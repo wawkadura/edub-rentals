@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { readDomain, writeDomain } from '../lib/data-store.ts'
-import { scheduleBackup } from '../lib/git-backup.ts'
+import { appendEvent, diffRecord } from '../lib/action-log.ts'
 import { computeSummary } from '../lib/summary.ts'
 import {
   ALL_NATURES,
@@ -33,61 +33,40 @@ function validateRecord(input: unknown, partial = false): Partial<TxRecord> | nu
   if ('transaction' in o) {
     if (typeof o.transaction !== 'string' || !o.transaction.trim()) return null
     out.transaction = o.transaction.trim()
-  } else if (!partial) {
-    return null
-  }
+  } else if (!partial) return null
 
   if ('amount' in o) {
     const n = typeof o.amount === 'number' ? o.amount : Number(o.amount)
     if (!Number.isFinite(n)) return null
     out.amount = n
-  } else if (!partial) {
-    return null
-  }
+  } else if (!partial) return null
 
   if ('date' in o) {
     if (typeof o.date !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(o.date)) return null
     out.date = o.date.slice(0, 10)
-  } else if (!partial) {
-    return null
-  }
+  } else if (!partial) return null
 
   if ('paid_by' in o) {
     if (!isParticipant(o.paid_by)) return null
     out.paid_by = o.paid_by
-  } else if (!partial) {
-    return null
-  }
+  } else if (!partial) return null
 
   if ('beneficiary' in o) {
     if (!isParticipant(o.beneficiary)) return null
     out.beneficiary = o.beneficiary
-  } else if (!partial) {
-    return null
-  }
+  } else if (!partial) return null
 
   if ('nature' in o) {
     if (!isNature(o.nature)) return null
     out.nature = o.nature
-  } else if (!partial) {
-    return null
-  }
+  } else if (!partial) return null
 
-  if ('tags' in o) {
-    out.tags = parseTags(o.tags)
-  } else if (!partial) {
-    out.tags = []
-  }
+  if ('tags' in o) out.tags = parseTags(o.tags)
+  else if (!partial) out.tags = []
 
-  if ('notes' in o) {
-    out.notes = typeof o.notes === 'string' ? o.notes : ''
-  }
-  if ('archive' in o) {
-    out.archive = Boolean(o.archive)
-  }
-  if ('hide' in o) {
-    out.hide = Boolean(o.hide)
-  }
+  if ('notes' in o) out.notes = typeof o.notes === 'string' ? o.notes : ''
+  if ('archive' in o) out.archive = Boolean(o.archive)
+  if ('hide' in o) out.hide = Boolean(o.hide)
 
   return out
 }
@@ -104,9 +83,7 @@ export async function recordsRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.post('/api/records', async (req, reply) => {
     const validated = validateRecord(req.body, false)
-    if (!validated) {
-      return reply.code(400).send({ error: 'Invalid record payload' })
-    }
+    if (!validated) return reply.code(400).send({ error: 'Invalid record payload' })
     const file = await readDomain<RecordsFile>('records')
     const created: TxRecord = {
       id: randomUUID(),
@@ -123,25 +100,26 @@ export async function recordsRoutes(fastify: FastifyInstance): Promise<void> {
     }
     file.records = [...file.records, created]
     await writeDomain('records', file)
-    scheduleBackup(`add: ${created.transaction} (${created.amount} LYD)`)
+    for (const d of diffRecord(null, created as unknown as Record<string, unknown>)) {
+      await appendEvent({ type: 'create_row', target: d.target, before: d.before, after: d.after })
+    }
     return created
   })
 
   fastify.put('/api/records/:id', async (req, reply) => {
     const { id } = req.params as { id: string }
     const patch = validateRecord(req.body, true)
-    if (!patch) {
-      return reply.code(400).send({ error: 'Invalid record payload' })
-    }
+    if (!patch) return reply.code(400).send({ error: 'Invalid record payload' })
     const file = await readDomain<RecordsFile>('records')
     const idx = file.records.findIndex(r => r.id === id)
-    if (idx === -1) {
-      return reply.code(404).send({ error: 'Record not found' })
-    }
-    const updated: TxRecord = { ...file.records[idx], ...patch }
+    if (idx === -1) return reply.code(404).send({ error: 'Record not found' })
+    const before = file.records[idx]
+    const updated: TxRecord = { ...before, ...patch }
     file.records = [...file.records.slice(0, idx), updated, ...file.records.slice(idx + 1)]
     await writeDomain('records', file)
-    scheduleBackup(`update: ${updated.transaction}`)
+    for (const d of diffRecord(before as unknown as Record<string, unknown>, updated as unknown as Record<string, unknown>)) {
+      await appendEvent({ type: 'set_cell', target: d.target, before: d.before, after: d.after })
+    }
     return updated
   })
 
@@ -149,12 +127,12 @@ export async function recordsRoutes(fastify: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string }
     const file = await readDomain<RecordsFile>('records')
     const target = file.records.find(r => r.id === id)
-    if (!target) {
-      return reply.code(404).send({ error: 'Record not found' })
-    }
+    if (!target) return reply.code(404).send({ error: 'Record not found' })
     file.records = file.records.filter(r => r.id !== id)
     await writeDomain('records', file)
-    scheduleBackup(`delete: ${target.transaction}`)
+    for (const d of diffRecord(target as unknown as Record<string, unknown>, null)) {
+      await appendEvent({ type: 'delete_row', target: d.target, before: d.before, after: d.after })
+    }
     return { ok: true }
   })
 }

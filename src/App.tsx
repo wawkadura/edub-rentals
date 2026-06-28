@@ -1,12 +1,15 @@
 import { NavLink, Route, Routes, Navigate } from 'react-router-dom'
-import { LayoutDashboard, Plus, ListTree, Sun, Moon, RefreshCw } from 'lucide-react'
+import { LayoutDashboard, Plus, ListTree, Sun, Moon, RefreshCw, History as HistoryIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Overview from './routes/Overview'
 import AddTransaction from './routes/AddTransaction'
 import EditTransaction from './routes/EditTransaction'
 import Transactions from './routes/Transactions'
+import History from './routes/History'
 import { useRecords } from './stores/records'
+import { useEnsureStores } from './lib/use-ensure-stores'
+import { usePullToRefresh } from './lib/use-pull-to-refresh'
 
 interface NavItem {
   to: string
@@ -37,6 +40,15 @@ export default function App() {
   const { theme, toggle } = useTheme()
   const loading = useRecords(s => s.loading)
 
+  // Lazy-load the records store on mount. Idempotent across re-renders.
+  useEnsureStores(useRecords)
+
+  // Pull-to-refresh: rentals only has one store, so the gesture re-fetches
+  // records + summary unconditionally. usePullToRefresh awaits the promise
+  // and clears its spinner when refresh resolves.
+  const triggerRefresh = useCallback(() => useRecords.getState().refresh(), [])
+  const { pull, refreshing } = usePullToRefresh(triggerRefresh)
+
   async function hardReload() {
     if ('serviceWorker' in navigator) {
       try {
@@ -59,6 +71,39 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen flex-col">
+      {/* Pull-to-refresh indicator — slides under the header, spins while
+          refresh is in flight, disappears when it resolves. */}
+      {(pull > 0 || refreshing) && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 'calc(56px + env(safe-area-inset-top))',
+            left: '50%',
+            transform: `translate(-50%, ${Math.min(pull - 40, 60)}px)`,
+            zIndex: 30,
+            background: 'var(--surface)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 999,
+            width: 36,
+            height: 36,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            pointerEvents: 'none',
+            transition: refreshing ? 'transform 0.15s ease-out' : 'none',
+          }}
+        >
+          <RefreshCw
+            size={16}
+            style={{
+              color: 'var(--accent-primary)',
+              transform: `rotate(${pull * 2}deg)`,
+              animation: refreshing ? 'spin 1s linear infinite' : undefined,
+            }}
+          />
+        </div>
+      )}
       <header
         className="sticky top-0 z-20 flex items-center justify-between border-b px-4 py-3 md:px-8"
         style={{ background: 'var(--nav-bg)', borderColor: 'var(--border-color)', backdropFilter: 'blur(14px)' }}
@@ -87,10 +132,20 @@ export default function App() {
         </nav>
 
         <div className="flex items-center gap-1">
+          <NavLink
+            to="/history"
+            aria-label="Historique"
+            className={({ isActive }) =>
+              `rounded-md p-2 hover:bg-white/10 ${isActive ? 'bg-white/10' : ''}`
+            }
+          >
+            <HistoryIcon size={16} />
+          </NavLink>
           <button
             onClick={hardReload}
             disabled={loading}
-            aria-label="Recharger l'application"
+            aria-label="Hard refresh (vide le cache + reload complet)"
+            title="Hard refresh — vide le cache, dégage le service worker, recharge la page"
             className="rounded-md p-2 hover:bg-white/10 disabled:opacity-50"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : undefined} />
@@ -119,6 +174,7 @@ export default function App() {
           <Route path="/add" element={<AddTransaction />} />
           <Route path="/edit/:id" element={<EditTransaction />} />
           <Route path="/transactions" element={<Transactions />} />
+          <Route path="/history" element={<History />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

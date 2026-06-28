@@ -43,3 +43,29 @@ export function updateRecord(id: string, patch: Partial<Omit<Record, 'id'>>) {
 export function deleteRecord(id: string) {
   return req<{ ok: true }>(`/records/${id}`, { method: 'DELETE' })
 }
+
+// === Audit log + History ===
+
+export interface ActionEvent {
+  id: string
+  ts: string
+  type: 'set_cell' | 'create_row' | 'delete_row' | 'undo' | 'redo'
+  target: string
+  before: unknown
+  after: unknown
+  undoes?: string
+}
+
+export function fetchLog(limit = 50, filters?: { from?: string; to?: string }) {
+  const qs = new URLSearchParams({ limit: String(limit) })
+  if (filters?.from) qs.set('from', filters.from)
+  if (filters?.to) qs.set('to', filters.to)
+  return req<ActionEvent[]>(`/log?${qs.toString()}`)
+}
+
+export function revertLogEvent(eventId: string) {
+  return req<{ undone: string; undoneEvent: ActionEvent }>(`/log/revert`, {
+    method: 'POST',
+    body: JSON.stringify({ eventId }),
+  })
+}

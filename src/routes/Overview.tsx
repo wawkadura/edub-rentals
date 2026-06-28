@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
   Area,
@@ -10,6 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 import { useRecords } from '../stores/records'
+import { PageSkeleton } from '../components/ui/Skeleton'
 import { formatLYD } from '../lib/format'
 import { Wallet, Percent, X } from 'lucide-react'
 import type { ParticipantSummary, Participant, Record as TxRecord } from '../lib/types'
@@ -81,13 +82,12 @@ function buildParticipantRows(p: ParticipantSummary) {
 type ChartRange = '3m' | '6m' | '1y' | 'all'
 
 export default function Overview() {
-  const { summary, records, loading, error, refresh, add } = useRecords()
+  const { summary, records, error, add } = useRecords()
   const [withdrawFor, setWithdrawFor] = useState<Participant | null>(null)
   const [chartRange, setChartRange] = useState<ChartRange>('all')
 
-  useEffect(() => {
-    refresh()
-  }, [refresh])
+  // Data is loaded by App.tsx via useEnsureStores(useRecords). No per-route
+  // fetch needed — re-visiting this page hits the in-memory store.
 
   const roi = useMemo(() => {
     if (!summary || summary.total_invested === 0) return null
@@ -100,9 +100,10 @@ export default function Overview() {
     [records, chartRange],
   )
 
-  if (loading && !summary) return <Centered>Chargement…</Centered>
-  if (error) return <Centered>Erreur : {error}</Centered>
-  if (!summary) return <Centered>Pas de données.</Centered>
+  if (!summary) {
+    if (error) return <Centered>Erreur : {error}</Centered>
+    return <PageSkeleton />
+  }
 
   const walid = summary.participants.find(p => p.name === 'Walid')!
   const sofian = summary.participants.find(p => p.name === 'Sofian')!

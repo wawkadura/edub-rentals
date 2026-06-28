@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import TransactionFlow from '../components/TransactionFlow'
 import { useRecords } from '../stores/records'
@@ -6,11 +5,9 @@ import { useRecords } from '../stores/records'
 export default function EditTransaction() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { records, refresh, update, remove } = useRecords()
+  const { records, update, remove } = useRecords()
 
-  useEffect(() => {
-    if (!records.length) refresh()
-  }, [records.length, refresh])
+  // Data is loaded by App.tsx via useEnsureStores(useRecords).
 
   if (!id) {
     return <div className="opacity-60">URL invalide.</div>
